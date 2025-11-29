@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>園遊會 POS Pro (雲端同步版)</title>
+    <title>園遊會 POS Pro (廚房歷史紀錄版)</title>
     <style>
         :root {
             --primary: #4f46e5;
@@ -110,15 +110,23 @@
         #pickup-app { display: none; height: 100%; width: 100%; flex-direction: column; background: #0f172a; color: white; padding: 20px; }
         
         .screen-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #334155; }
-        .screen-title { font-size: 2rem; font-weight: bold; }
+        .screen-title { font-size: 2rem; font-weight: bold; display: flex; align-items: center; gap: 10px; }
+        
+        /* New: Kitchen Tab Switcher */
+        .kitchen-tabs { display: flex; background: rgba(255,255,255,0.1); border-radius: 50px; padding: 4px; }
+        .k-tab { border: none; background: transparent; color: #94a3b8; padding: 8px 16px; border-radius: 40px; cursor: pointer; font-weight: bold; font-size: 1rem; transition: 0.2s; }
+        .k-tab.active { background: white; color: #0f172a; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+
         .ticket-container, .pickup-grid { display: flex; flex-wrap: wrap; gap: 20px; overflow-y: auto; align-content: flex-start; flex: 1; }
         
-        .ticket { background: #1f2937; width: 260px; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; border-top: 6px solid #6b7280; box-shadow: 0 10px 20px rgba(0,0,0,0.3); animation: popIn 0.3s; }
+        .ticket { background: #1f2937; width: 260px; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; border-top: 6px solid #6b7280; box-shadow: 0 10px 20px rgba(0,0,0,0.3); animation: popIn 0.3s; position: relative;}
+        .ticket.history-mode { opacity: 0.8; border-top-color: #64748b !important; }
         .ticket-head { padding: 12px; background: rgba(255,255,255,0.05); display: flex; justify-content: space-between; font-weight: bold; font-size: 1.5rem; color: #facc15; }
         .ticket-body { padding: 15px; flex: 1; font-size: 1.2rem; }
         .ticket-item { display: flex; justify-content: space-between; margin-bottom: 8px; border-bottom: 1px dashed #374151; padding-bottom: 4px; }
         .btn-done { width: 100%; padding: 15px; background: var(--success); color: white; border: none; font-weight: bold; font-size: 1.1rem; cursor: pointer; }
-        
+        .btn-undo { width: 100%; padding: 15px; background: #475569; color: white; border: none; font-weight: bold; font-size: 1.1rem; cursor: pointer; }
+
         .pickup-card { background: white; color: #0f172a; width: 300px; border-radius: 15px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 10px 25px rgba(0,0,0,0.5); animation: slideUp 0.5s; }
         .pickup-head { background: #f59e0b; color: black; padding: 20px; font-size: 3.5rem; font-weight: 900; text-align: center; letter-spacing: 2px; }
         .pickup-body { padding: 20px; flex: 1; font-size: 1.3rem; }
@@ -152,15 +160,15 @@
             </div>
             <div class="role-card" onclick="selectRole('food')" style="background: linear-gradient(to right, #ea580c, #c2410c);">
                 <div class="role-icon">🍔</div>
-                <div class="role-name">食物組廚房</div>
+                <div class="role-name">食物組</div>
             </div>
             <div class="role-card" onclick="selectRole('drink')" style="background: linear-gradient(to right, #0284c7, #0369a1);">
                 <div class="role-icon">🥤</div>
-                <div class="role-name">飲料組吧台</div>
+                <div class="role-name">飲料組</div>
             </div>
             <div class="role-card role-pickup" onclick="selectRole('pickup')">
                 <div class="role-icon">🍱</div>
-                <div class="role-name">出餐口 (叫號)</div>
+                <div class="role-name">出餐口</div>
             </div>
         </div>
     </div>
@@ -222,6 +230,10 @@
     <div id="kitchen-app">
         <div class="screen-header">
             <div class="screen-title"><span id="kitchen-icon"></span> <span id="kitchen-text">廚房看板</span></div>
+            <div class="kitchen-tabs">
+                <button id="btn-k-pending" class="k-tab active" onclick="setKitchenMode('pending')">🔥 待辦</button>
+                <button id="btn-k-history" class="k-tab" onclick="setKitchenMode('history')">📜 紀錄</button>
+            </div>
             <div id="kitchen-clock" style="font-size:1.5rem; opacity:0.7;">00:00</div>
         </div>
         <div class="ticket-container" id="kitchen-orders"></div>
@@ -282,12 +294,11 @@
 
     <script type="module">
         // --- 1. 引入 Firebase SDK (CDN 版本) ---
-        // 注意：這裡改成了 CDN 網址，這樣才能在瀏覽器直接執行
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getDatabase, ref, set, push, onValue, update, remove, runTransaction } 
         from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
     
-        // --- 2. 你的 Firebase 設定 (已填入) ---
+        // --- 2. 你的 Firebase 設定 ---
         const firebaseConfig = {
             apiKey: "AIzaSyBDcB7xlQfBmD97kOjc_ZMvnCkNbR5gS0Q",
             authDomain: "myposschoolfair.firebaseapp.com",
@@ -322,6 +333,7 @@
         let currentRole = '';
         let currentFilter = 'All';
         let currentEditingGroup = '';
+        let kitchenViewMode = 'pending'; // 'pending' or 'history'
     
         // --- 4. 監聽雲端資料 ---
         const menuRef = ref(db, 'menu');
@@ -364,6 +376,15 @@
     
         // --- 全域函式綁定 ---
         window.selectRole = function(role) {
+            // 總務密碼檢查
+            if (role === 'cashier') {
+                const pwd = prompt("🔒 請輸入總務密碼：");
+                if (pwd !== '1329') {
+                    alert("🚫 密碼錯誤，拒絕存取！");
+                    return; 
+                }
+            }
+            
             currentRole = role;
             document.getElementById('role-selection-screen').style.display = 'none';
             if (role === 'cashier') {
@@ -373,11 +394,29 @@
                 document.getElementById('pickup-app').style.display = 'flex';
                 renderPickup();
             } else {
+                // 進入廚房時，預設顯示待辦
+                kitchenViewMode = 'pending';
+                document.getElementById('btn-k-pending').classList.add('active');
+                document.getElementById('btn-k-history').classList.remove('active');
+                
                 document.getElementById('kitchen-app').style.display = 'flex';
                 document.getElementById('kitchen-icon').innerText = role === 'food' ? '🍔' : '🥤';
                 document.getElementById('kitchen-text').innerText = role === 'food' ? '食物組' : '飲料組';
                 renderKitchen();
             }
+        };
+
+        // --- 廚房檢視切換 ---
+        window.setKitchenMode = function(mode) {
+            kitchenViewMode = mode;
+            if(mode === 'pending') {
+                document.getElementById('btn-k-pending').classList.add('active');
+                document.getElementById('btn-k-history').classList.remove('active');
+            } else {
+                document.getElementById('btn-k-pending').classList.remove('active');
+                document.getElementById('btn-k-history').classList.add('active');
+            }
+            renderKitchen();
         };
     
         window.filterMenu = function(group) {
@@ -505,27 +544,61 @@
             if(confirm("確定刪除? 這會從所有裝置移除此單")) remove(ref(db, `sales/${key}`));
         };
     
+        // --- 廚房渲染邏輯 (支援 待辦/紀錄 雙模式) ---
         window.renderKitchen = function() {
             const container = document.getElementById('kitchen-orders');
             const target = currentRole === 'food' ? '食物組' : '飲料組';
             let html = '';
-            salesHistory.forEach(o => {
+            
+            // 由於 salesHistory 是陣列，我們需要篩選
+            // 如果是紀錄模式，我們希望看到最新的在前面，salesHistory 預設是舊到新(Firebase push order)，所以需要 reverse
+            const list = [...salesHistory].reverse();
+
+            list.forEach(o => {
                 let status = target === '食物組' ? o.foodStatus : o.drinkStatus;
-                if(status !== 'pending') return;
+                
+                // 根據模式篩選
+                if (kitchenViewMode === 'pending') {
+                    if (status !== 'pending') return;
+                } else {
+                    // 歷史紀錄模式：顯示已完成 (ready) 或已取餐 (picked)，忽略 none
+                    if (status === 'pending' || status === 'none') return;
+                }
+
                 const items = o.items ? o.items.filter(i => i.group === target) : [];
                 if(items.length > 0) {
                     const rows = items.map(i => `<div class="ticket-item"><span>${i.name}</span><b>x${i.qty}</b></div>`).join('');
                     const border = target === '食物組' ? 'border-food' : 'border-drink';
                     const idDisplay = o.displayId || '---';
-                    html += `<div class="ticket ${border}"><div class="ticket-head"><span>#${idDisplay}</span><span>${o.time}</span></div><div class="ticket-body">${rows}</div><button class="btn-done" onclick="window.doneKitchen('${o.dbKey}','${target}')">✅ 完成</button></div>`;
+                    
+                    if (kitchenViewMode === 'pending') {
+                        // 待辦模式：顯示完成按鈕
+                        html += `<div class="ticket ${border}"><div class="ticket-head"><span>#${idDisplay}</span><span>${o.time}</span></div><div class="ticket-body">${rows}</div><button class="btn-done" onclick="window.doneKitchen('${o.dbKey}','${target}')">✅ 完成</button></div>`;
+                    } else {
+                        // 歷史模式：顯示復原按鈕，並加上樣式區別
+                        html += `<div class="ticket ${border} history-mode"><div class="ticket-head" style="color:#cbd5e1"><span>#${idDisplay}</span><span>${o.time}</span></div><div class="ticket-body">${rows}</div><button class="btn-undo" onclick="window.undoKitchen('${o.dbKey}','${target}')">↩️ 復原 (未做)</button></div>`;
+                    }
                 }
             });
-            container.innerHTML = html || '<div style="width:100%;text-align:center;margin-top:100px;color:#64748b;font-size:1.2rem;">👨‍🍳 暫無訂單</div>';
+            
+            const emptyText = kitchenViewMode === 'pending' ? '👨‍🍳 暫無訂單' : '📜 暫無歷史紀錄';
+            container.innerHTML = html || `<div style="width:100%;text-align:center;margin-top:100px;color:#64748b;font-size:1.2rem;">${emptyText}</div>`;
         };
+        
+        // 完成訂單
         window.doneKitchen = function(key, grp) {
             const updates = {};
             if(grp==='食物組') updates[`sales/${key}/foodStatus`] = 'ready';
             if(grp==='飲料組') updates[`sales/${key}/drinkStatus`] = 'ready';
+            update(ref(db), updates);
+        };
+
+        // 復原訂單 (Undo)
+        window.undoKitchen = function(key, grp) {
+            if(!confirm("確定要將此訂單回復為「未完成」狀態嗎？")) return;
+            const updates = {};
+            if(grp==='食物組') updates[`sales/${key}/foodStatus`] = 'pending';
+            if(grp==='飲料組') updates[`sales/${key}/drinkStatus`] = 'pending';
             update(ref(db), updates);
         };
     
@@ -636,10 +709,15 @@
         }
     
         window.resetAllData = function() { 
-            if(prompt("請輸入 'RESET' 確認清除雲端所有資料") === 'RESET'){
+            // 雲端重置密碼檢查
+            const pwd = prompt("⚠️ 嚴重警告：即將清除所有營收與訂單資料！\n🔒 請輸入管理員密碼：");
+            if(pwd === 'z.c.huang'){
                 remove(ref(db));
+                alert("✅ 已重置所有資料。");
                 location.reload();
-            } 
+            } else {
+                if(pwd !== null) alert("🚫 密碼錯誤，操作取消。");
+            }
         }
     
         setInterval(() => {
