@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>園遊會 POS Pro (終極完整版)</title>
+    <title>園遊會 POS Pro (完售可切換版)</title>
     <style>
         :root {
             --primary: #4f46e5;
@@ -44,10 +44,13 @@
         .cat-btn[data-group="飲料組"].active { background: var(--color-drink); }
         .cat-btn[data-group="History"].active { background: var(--danger); }
         .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 15px; overflow-y: auto; padding-bottom: 20px; flex: 1; align-content: flex-start; }
+        
         .product-card { background: white; border-radius: var(--radius); padding: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); cursor: pointer; transition: 0.2s; display: flex; flex-direction: column; justify-content: space-between; height: 110px; border-left: 5px solid #ccc; position: relative; overflow: hidden; user-select: none; }
         .product-card:active { transform: scale(0.95); }
-        .product-card.sold-out { opacity: 0.5; filter: grayscale(1); pointer-events: none; background: #e2e8f0; }
+        /* 修正重點：移除 pointer-events: none，改用 cursor: not-allowed，這樣才能再次長按解除 */
+        .product-card.sold-out { opacity: 0.6; filter: grayscale(1); background: #e2e8f0; cursor: not-allowed; }
         .product-card.sold-out::after { content: "完售"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-15deg); color: #ef4444; font-size: 2rem; font-weight: 900; border: 3px solid #ef4444; padding: 5px 10px; border-radius: 8px; opacity: 1; }
+        
         .product-name { font-size: 1.1rem; font-weight: bold; margin-bottom: 5px; line-height: 1.2; }
         .product-price { font-size: 1.2rem; font-weight: 800; color: var(--primary); text-align: right; }
         .badge { font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; color: white; display: inline-block; margin-bottom: 5px; width: fit-content;}
@@ -119,16 +122,16 @@
                 <div class="role-icon">💰</div><div class="role-name">總務收銀台</div>
             </div>
             <div class="role-card" onclick="selectRole('food')" style="background: linear-gradient(to right, #ea580c, #c2410c);">
-                <div class="role-icon">🍔</div><div class="role-name">食物組</div>
+                <div class="role-icon">🍔</div><div class="role-name">食物組廚房</div>
             </div>
             <div class="role-card" onclick="selectRole('drink')" style="background: linear-gradient(to right, #0284c7, #0369a1);">
-                <div class="role-icon">🥤</div><div class="role-name">飲料組</div>
+                <div class="role-icon">🥤</div><div class="role-name">飲料組吧台</div>
             </div>
             <div class="role-card role-pickup" onclick="selectRole('pickup')">
-                <div class="role-icon">🍱</div><div class="role-name">出餐口</div>
+                <div class="role-icon">🍱</div><div class="role-name">出餐口 (叫號)</div>
             </div>
         </div>
-        <div style="margin-top:20px; color:rgba(255,255,255,0.5); font-size:0.9rem;">提示：點擊進入，收銀台長按商品可標記完售</div>
+        <div style="margin-top:20px; color:rgba(255,255,255,0.5); font-size:0.9rem;">提示：點擊進入，收銀台長按商品可切換 完售/有貨</div>
     </div>
 
     <div id="cashier-app">
@@ -251,20 +254,18 @@
         let currentFilter = 'All';
         let currentEditingGroup = '';
         let kitchenViewMode = 'pending';
-        let lastSalesLength = 0; // 用於判斷是否有新訂單播放音效
+        let lastSalesLength = 0;
 
         const menuRef = ref(db, 'menu');
         const salesRef = ref(db, 'sales');
         const expensesRef = ref(db, 'expenses');
         const countRef = ref(db, 'dailyCount');
     
-        // Sound Utils
         const playSound = (id) => {
             const audio = document.getElementById(id);
             if(audio) { audio.currentTime = 0; audio.play().catch(e=>console.log("Audio play failed:",e)); }
         };
 
-        // Data Listeners
         onValue(menuRef, (snapshot) => {
             const data = snapshot.val();
             products = data ? Object.values(data) : defaultProducts;
@@ -275,10 +276,7 @@
         onValue(salesRef, (snapshot) => {
             const data = snapshot.val();
             const newSales = data ? Object.values(data) : [];
-            
-            // 判斷是否需要播放音效
             if (newSales.length > lastSalesLength && lastSalesLength > 0) {
-                // 有新訂單
                 if (currentRole === 'food' || currentRole === 'drink') playSound('sound-kitchen');
                 if (currentRole === 'pickup') playSound('sound-pickup');
             }
@@ -325,7 +323,6 @@
             }
         };
 
-        // Kitchen Mode
         window.setKitchenMode = function(mode) {
             kitchenViewMode = mode;
             if(mode === 'pending') {
@@ -343,7 +340,6 @@
             document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
             document.querySelector(`.cat-btn[data-group="${group}"]`).classList.add('active');
             const menuContainer = document.getElementById('menu-container');
-            
             if(group === 'History') {
                 menuContainer.style.display = 'none';
                 if(!document.getElementById('history-list')) {
@@ -359,14 +355,12 @@
             }
         };
         
-        // Long press logic for Quick Sold Out
         let pressTimer;
         window.startLongPress = function(p) { pressTimer = window.setTimeout(() => toggleSoldOut(p), 800); }
         window.cancelLongPress = function() { window.clearTimeout(pressTimer); }
         
         window.toggleSoldOut = function(p) {
             if(confirm(`要將「${p.name}」標記為 ${p.soldOut ? '有貨' : '完售'} 嗎？`)) {
-                // Find index
                 const idx = products.findIndex(x => x.id === p.id);
                 if(idx !== -1) {
                     const updated = [...products];
@@ -378,7 +372,10 @@
         }
 
         window.addToCart = function(p) {
-            if(p.soldOut) return;
+            if(p.soldOut) {
+                showToast("❌ 此商品已完售 (長按可解除)");
+                return;
+            }
             let price = p.price;
             let note = '';
             
@@ -386,13 +383,10 @@
                 const input = prompt("請輸入金額:", ""); if(!input) return;
                 price = parseInt(input); if(isNaN(price)||price<=0) { showToast("金額錯誤"); return; }
             }
-            // Ask for note? Optional.
-            // const wantNote = confirm("需要備註嗎？(如：少冰/微糖)");
-            // if(wantNote) note = prompt("請輸入備註:", "");
 
             const item = JSON.parse(JSON.stringify(p));
             item.price = price;
-            item.note = note; // Add note field
+            item.note = note;
 
             const exist = cart.find(i => i.id === item.id && i.price === price && i.note === note);
             if(exist) exist.qty++; else { item.qty = 1; cart.push(item); }
@@ -416,7 +410,6 @@
                 div.style.borderLeftColor = groupColors[p.group] || '#ccc';
                 const price = p.price === 0 ? '自訂' : `$${p.price}`;
                 
-                // Add touch events for long press
                 div.onmousedown = () => window.startLongPress(p);
                 div.onmouseup = () => window.cancelLongPress();
                 div.ontouchstart = () => window.startLongPress(p);
@@ -548,10 +541,9 @@
         window.pickupDone = function(key) {
             const o = salesHistory.find(x => x.dbKey === key); if(!o) return;
             const u={}; if(o.foodStatus==='ready')u[`sales/${key}/foodStatus`]='picked'; if(o.drinkStatus==='ready')u[`sales/${key}/drinkStatus`]='picked';
-            update(ref(db), u); playSound('sound-checkout'); // Pick sound reused or generic
+            update(ref(db), u); playSound('sound-checkout');
         };
 
-        // Admin & Expense
         window.addExpense = function() {
             const b=document.getElementById('ex-buyer').value, n=document.getElementById('ex-note').value, a=parseInt(document.getElementById('ex-amt').value);
             if(b&&n&&!isNaN(a)) { push(expensesRef, {group: currentEditingGroup, buyer:b, note:n, amount:a}); document.getElementById('ex-amt').value=''; }
@@ -588,7 +580,6 @@
         }
         window.showToast = function(msg) { const b = document.getElementById('toast-box'); const d = document.createElement('div'); d.className = 'toast'; d.innerText = msg; b.appendChild(d); setTimeout(() => d.remove(), 3000); }
         
-        // Menu Editor (Update for Sold Out)
         window.openMenuEditor = function() { document.getElementById('menu-editor-modal').style.display='flex'; document.getElementById('menu-editor-body').innerHTML=''; products.forEach(p => addEditorRow(p)); }
         window.closeMenuEditor = function() { document.getElementById('menu-editor-modal').style.display='none'; }
         window.addNewProductRow = function() { addEditorRow(); }
@@ -596,7 +587,6 @@
             const b=document.getElementById('menu-editor-body'); const r=document.createElement('tr');
             const grps = ["食物組", "飲料組", "遊戲組", "動漫組"];
             const opts = grps.map(g=>`<option value="${g}" ${p&&p.group===g?'selected':''}>${g}</option>`).join('');
-            // Checkbox for sold out
             const checked = p && p.soldOut ? 'checked' : '';
             r.innerHTML=`
             <td><input type="checkbox" class="e-sold" ${checked}> 完售</td>
@@ -615,7 +605,7 @@
                     group:r.querySelector('.e-g').value, 
                     name:n, 
                     price:parseInt(r.querySelector('.e-p').value)||0,
-                    soldOut: r.querySelector('.e-sold').checked // Save sold status
+                    soldOut: r.querySelector('.e-sold').checked
                 });
             });
             set(menuRef, np);
