@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>園遊會 POS Pro (V6.1 菜單恢復版)</title>
+    <title>園遊會 POS Pro</title>
     <style>
         :root {
             --primary: #6366f1; --primary-dark: #4f46e5;
@@ -142,16 +142,16 @@
         <div class="app-title">🎪 園遊會 POS Pro</div>
         <div class="role-grid">
             <div class="role-card role-full" onclick="selectRole('cashier')">
-                <div class="role-icon">💰</div><div class="role-name">總務收銀台</div>
+                <div class="role-icon">💰</div><div class="role-name">收銀台</div>
             </div>
             <div class="role-card" onclick="selectRole('food')" style="background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); border:none;">
-                <div class="role-icon">🍔</div><div class="role-name">食物廚房</div>
+                <div class="role-icon">🍔</div><div class="role-name">食物組</div>
             </div>
             <div class="role-card" onclick="selectRole('drink')" style="background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); border:none;">
-                <div class="role-icon">🥤</div><div class="role-name">飲料吧台</div>
+                <div class="role-icon">🥤</div><div class="role-name">飲料組</div>
             </div>
             <div class="role-card role-pickup" onclick="selectRole('pickup')" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); grid-column: span 2; border:none;">
-                <div class="role-icon">🍱</div><div class="role-name">叫號取餐螢幕</div>
+                <div class="role-icon">🍱</div><div class="role-name">取餐口</div>
             </div>
         </div>
     </div>
@@ -230,12 +230,6 @@
                 <button class="tag-btn" onclick="addTag('去冰')">去冰</button>
                 <button class="tag-btn" onclick="addTag('微糖')">微糖</button>
                 <button class="tag-btn" onclick="addTag('半糖')">半糖</button>
-                <button class="tag-btn" onclick="addTag('不辣')">不辣</button>
-                <button class="tag-btn" onclick="addTag('小辣')">小辣</button>
-                <button class="tag-btn" onclick="addTag('大辣')">大辣</button>
-                <button class="tag-btn" onclick="addTag('不要香菜')">不要香菜</button>
-                <button class="tag-btn" onclick="addTag('外帶')">外帶</button>
-                <button class="tag-btn" onclick="addTag('內用')">內用</button>
             </div>
             <input id="custom-note" placeholder="或輸入自訂備註..." style="width:100%; padding:10px; border:1px solid #ccc; border-radius:8px; margin-bottom:15px;">
             <button onclick="saveNote()" style="width:100%; padding:12px; background:var(--primary); color:white; border:none; border-radius:8px; font-weight:bold;">確定</button>
@@ -462,3 +456,4 @@
     </script>
 </body>
 </html>
+
