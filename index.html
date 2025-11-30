@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>園遊會 POS Pro</title>
+    <title>園遊會 POS</title>
     <style>
         :root {
             --primary: #6366f1; --primary-dark: #4f46e5;
@@ -114,9 +114,17 @@
         .summary-table td { padding: 12px; border-bottom: 1px solid #374151; }
         .sum-qty { font-weight: 800; color: var(--warning); text-align: right; }
 
-        /* Pickup */
-        .pickup-card { background: white; color: black; border-left: none; border-top: 8px solid var(--warning); text-align: center; }
-        .pickup-big-num { font-size: 3.5rem; font-weight: 900; margin: 10px 0; }
+        /* Pickup Cards */
+        .pickup-card { background: white; color: black; border-left: none; border-top: 8px solid #4b5563; text-align: center; position: relative; overflow: hidden; }
+        .pickup-card.ready { border-top-color: var(--warning); background: #fffbeb; animation: pop 0.5s; }
+        .pickup-card.preparing { border-top-color: #9ca3af; background: #e5e7eb; opacity: 0.8; }
+        .pickup-status-badge { font-weight: bold; font-size: 1.2rem; padding: 5px; margin-bottom: 5px; display: block; border-radius: 4px; }
+        .status-ready { background: var(--warning); color: black; }
+        .status-prep { background: #9ca3af; color: white; }
+        
+        .pickup-big-num { font-size: 3.5rem; font-weight: 900; margin: 5px 0; }
+        
+        @keyframes pop { 0% { transform: scale(0.9); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
 
         /* Modals */
         .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 3000; display: none; justify-content: center; align-items: center; }
@@ -138,6 +146,9 @@
 
     <div id="connection-banner"></div>
 
+    <audio id="sfx-checkout" src="https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3"></audio>
+    <audio id="sfx-bell" src="https://assets.mixkit.co/active_storage/sfx/571/571-preview.mp3"></audio>
+
     <div id="role-selection-screen">
         <div class="app-title">🎪 園遊會 POS Pro</div>
         <div class="role-grid">
@@ -154,6 +165,7 @@
                 <div class="role-icon">🍱</div><div class="role-name">取餐口</div>
             </div>
         </div>
+        <div style="margin-top:20px; color:rgba(255,255,255,0.5); font-size:0.9rem;">V6.2 現場強化版 (音效/防休眠)</div>
     </div>
 
     <div id="cashier-app">
@@ -230,6 +242,12 @@
                 <button class="tag-btn" onclick="addTag('去冰')">去冰</button>
                 <button class="tag-btn" onclick="addTag('微糖')">微糖</button>
                 <button class="tag-btn" onclick="addTag('半糖')">半糖</button>
+                <button class="tag-btn" onclick="addTag('不辣')">不辣</button>
+                <button class="tag-btn" onclick="addTag('小辣')">小辣</button>
+                <button class="tag-btn" onclick="addTag('大辣')">大辣</button>
+                <button class="tag-btn" onclick="addTag('不要香菜')">不要香菜</button>
+                <button class="tag-btn" onclick="addTag('外帶')">外帶</button>
+                <button class="tag-btn" onclick="addTag('內用')">內用</button>
             </div>
             <input id="custom-note" placeholder="或輸入自訂備註..." style="width:100%; padding:10px; border:1px solid #ccc; border-radius:8px; margin-bottom:15px;">
             <button onclick="saveNote()" style="width:100%; padding:12px; background:var(--primary); color:white; border:none; border-radius:8px; font-weight:bold;">確定</button>
@@ -264,7 +282,6 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // Default Products Data
         const defaultProducts = [
             { id: 101, group: "食物組", name: "麻辣鴨血", price: 60, soldOut: false },
             { id: 102, group: "食物組", name: "鴨血泡麵", price: 80, soldOut: false },
@@ -275,21 +292,29 @@
 
         let products=[], sales=[], expenses=[], cart=[], currentRole='', currentFilter='All', kitchenMode='pending';
         let currentEditIndex = -1; 
+        let previousSalesCount = 0; // For audio trigger
 
         onValue(ref(db, ".info/connected"), s => { document.getElementById('connection-banner').style.background = s.val()?'var(--success)':'var(--danger)'; if(!s.val()) showToast("⚠️ 斷線"); });
         
-        // Auto-populate if empty
         onValue(ref(db, 'menu'), s => { 
             const val = s.val();
-            if (!val) {
-                set(ref(db, 'menu'), defaultProducts);
-            } else {
-                products = Object.values(val); 
-                if(currentRole==='cashier') renderMenu(); 
-            }
+            if (!val) set(ref(db, 'menu'), defaultProducts);
+            else { products = Object.values(val); if(currentRole==='cashier') renderMenu(); }
         });
 
-        onValue(ref(db, 'sales'), s => { sales = s.val()?Object.entries(s.val()).map(([k,v])=>({...v,dbKey:k})):[]; refreshUI(); });
+        onValue(ref(db, 'sales'), s => { 
+            const data = s.val();
+            const newSales = data ? Object.entries(data).map(([k,v])=>({...v,dbKey:k})) : [];
+            
+            // Audio Trigger: Only if NOT cashier and more orders appeared
+            if(currentRole && currentRole !== 'cashier' && newSales.length > previousSalesCount) {
+                playAudio('sfx-bell');
+            }
+            previousSalesCount = newSales.length;
+            sales = newSales;
+            refreshUI(); 
+        });
+
         onValue(ref(db, 'expenses'), s => { expenses = s.val()?Object.values(s.val()):[]; if(document.getElementById('profit-modal').style.display==='flex') renderProfitTable(); });
 
         function refreshUI(){
@@ -300,6 +325,20 @@
         }
 
         // --- Core Interactions ---
+        window.playAudio = (id) => {
+            const audio = document.getElementById(id);
+            if(audio) { audio.currentTime = 0; audio.play().catch(e => console.log("Audio needed user interaction")); }
+        }
+
+        window.requestWakeLock = async () => {
+            try {
+                if ('wakeLock' in navigator) {
+                    await navigator.wakeLock.request('screen');
+                    console.log('Wake Lock Active');
+                }
+            } catch (err) { console.log(err); }
+        }
+
         window.setupCardEvents = (div, p) => {
             let t, sx, sy, ip=false;
             div.onpointerdown=e=>{if(e.button!==0)return; div.setPointerCapture(e.pointerId); sx=e.clientX; sy=e.clientY; ip=true; div.classList.add('pressing'); t=setTimeout(()=>{if(ip){ip=false;div.classList.remove('pressing');toggleSoldOut(p)}},800)};
@@ -371,6 +410,7 @@
                 if(res.committed){
                     const id=String(res.snapshot.val()).padStart(3,'0');
                     push(ref(db,'sales'),{orderId:Date.now(),displayId:id,time:new Date().toLocaleTimeString('en-US',{hour12:false,hour:"2-digit",minute:"2-digit"}),items:cart,total,foodStatus:hasFood?'pending':'none',drinkStatus:hasDrink?'pending':'none'});
+                    playAudio('sfx-checkout');
                     showToast(`✅ 結帳成功 #${id}`); cart=[]; document.getElementById('pay-amount').value=''; if(window.innerWidth<768)document.getElementById('cart-panel').classList.remove('expanded'); renderCart();
                 }
             }).finally(()=>{btn.disabled=false;btn.innerText="結 帳"});
@@ -418,16 +458,40 @@
         };
         window.updStatus=(k,sk,v)=>{update(ref(db,`sales/${k}`),{[sk]:v})};
 
+        // Pickup (V6.2 Status Display Update)
         window.renderPickup = () => {
             const c=document.getElementById('pickup-orders'); c.innerHTML='';
             sales.forEach(o=>{
                 const rel=(o.items||[]).filter(i=>i.group==='食物組'||i.group==='飲料組'); if(rel.length===0)return;
                 const fR=o.foodStatus==='ready'||o.foodStatus==='none', dR=o.drinkStatus==='ready'||o.drinkStatus==='none';
                 const fP=o.foodStatus==='picked'||o.foodStatus==='none', dP=o.drinkStatus==='picked'||o.drinkStatus==='none';
-                if(fR&&dR && !(fP&&dP)){
+                
+                // Show if NOT picked yet
+                if(!(fP && dP)) {
+                    // Determine Status: If any pending -> Preparing. If any ready -> Ready. (Ready takes priority for separate cards or combined?)
+                    // Logic: If any part is Ready, show as Ready (to call customer). If only Pending, show as Preparing.
+                    
+                    let statusClass = 'preparing';
+                    let statusText = '🔥 製作中';
+                    
+                    // If anything is ready, upgrade status
+                    if ((o.foodStatus==='ready') || (o.drinkStatus==='ready')) {
+                        statusClass = 'ready';
+                        statusText = '✅ 待取餐';
+                    }
+
                     const txt=rel.map(i=>`${i.name} x${i.qty}`).join(', ');
-                    const d=document.createElement('div'); d.className='ticket pickup-card';
-                    d.innerHTML=`<div class="pickup-big-num">#${o.displayId}</div><div style="color:#4b5563;margin-bottom:15px;">${txt}</div><button class="btn-ticket" style="background:#1f2937;color:white;" onclick="pkDone('${o.dbKey}')">已取餐</button>`;
+                    const d=document.createElement('div'); d.className=`ticket pickup-card ${statusClass}`;
+                    
+                    // Button only if ready
+                    const btn = statusClass==='ready' ? `<button class="btn-ticket" style="background:#1f2937;color:white;" onclick="pkDone('${o.dbKey}')">已取餐</button>` : '';
+
+                    d.innerHTML=`
+                        <div class="pickup-status-badge ${statusClass === 'ready' ? 'status-ready' : 'status-prep'}">${statusText}</div>
+                        <div class="pickup-big-num">#${o.displayId}</div>
+                        <div style="color:#4b5563;margin-bottom:15px;">${txt}</div>
+                        ${btn}
+                    `;
                     c.appendChild(d);
                 }
             });
@@ -447,7 +511,18 @@
         window.filterMenu=g=>{currentFilter=g;document.querySelectorAll('.cat-pill').forEach(b=>b.classList.toggle('active',b.dataset.group===g));document.getElementById('menu-container').style.display=g==='History'?'none':'grid';document.getElementById('history-container').style.display=g==='History'?'block':'none';if(g==='History')renderHistory();else renderMenu()};
         window.renderHistory=()=>{document.getElementById('history-container').innerHTML=sales.slice().reverse().map(o=>`<div style="background:white;padding:15px;margin-bottom:10px;border-radius:12px;border:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;"><div><div style="font-weight:bold;font-size:1.1rem;">#${o.displayId} <span style="font-size:0.8rem;font-weight:normal;color:#6b7280;margin-left:5px;">${o.time}</span></div><div style="color:#4b5563;font-size:0.9rem;margin-top:5px;">${(o.items||[]).map(i=>i.name).join(', ')}</div></div><div style="text-align:right;"><div style="font-weight:800;color:var(--primary);font-size:1.2rem;">$${o.total}</div><button onclick="delOrder('${o.dbKey}')" style="margin-top:5px;color:var(--danger);background:none;border:none;font-size:0.85rem;cursor:pointer;">刪除</button></div></div>`).join('')};
         window.delOrder=k=>{if(confirm("刪除?"))remove(ref(db,`sales/${k}`))};
-        window.selectRole=r=>{if(r==='cashier'&&prompt("密碼")!=='1329')return alert("錯誤");currentRole=r;document.getElementById('role-selection-screen').style.display='none';if(r==='cashier'){document.getElementById('cashier-app').style.display='block';renderMenu()}else if(r==='pickup'){document.getElementById('pickup-app').style.display='flex';renderPickup()}else{document.getElementById('kitchen-app').style.display='flex';document.getElementById('kitchen-icon').innerText=r==='food'?'🍔':'🥤';document.getElementById('kitchen-title').innerText=r==='food'?'食物廚房':'飲料吧台';setKitchenMode('pending')}};
+        
+        window.selectRole=r=>{
+            if(r==='cashier'&&prompt("密碼")!=='1329')return alert("錯誤");
+            currentRole=r; document.getElementById('role-selection-screen').style.display='none';
+            
+            // Wake Lock for displays
+            if(r!=='cashier') requestWakeLock();
+
+            if(r==='cashier'){document.getElementById('cashier-app').style.display='block';renderMenu()}
+            else if(r==='pickup'){document.getElementById('pickup-app').style.display='flex';renderPickup()}
+            else{document.getElementById('kitchen-app').style.display='flex';document.getElementById('kitchen-icon').innerText=r==='food'?'🍔':'🥤';document.getElementById('kitchen-title').innerText=r==='food'?'食物廚房':'飲料吧台';setKitchenMode('pending')}
+        };
 
         window.openMenuEditor=()=>{document.getElementById('menu-editor-modal').style.display='flex';document.getElementById('menu-editor-list').innerHTML=products.map((p,i)=>`<div style="display:flex;gap:8px;margin-bottom:10px;"><select id="me-g-${i}" style="padding:8px;border-radius:6px;border:1px solid #d1d5db;"><option ${p.group==='食物組'?'selected':''}>食物組</option><option ${p.group==='飲料組'?'selected':''}>飲料組</option><option ${p.group==='遊戲組'?'selected':''}>遊戲組</option><option ${p.group==='動漫組'?'selected':''}>動漫組</option></select><input id="me-n-${i}" value="${p.name}" style="flex:1;padding:8px;border-radius:6px;border:1px solid #d1d5db;"><input id="me-p-${i}" type="number" value="${p.price}" style="width:60px;padding:8px;border-radius:6px;border:1px solid #d1d5db;"><button onclick="this.parentElement.remove()" style="color:var(--danger);border:none;background:none;font-size:1.2rem;">×</button></div>`).join('')};
         window.addEditorRow=()=>{const d=document.createElement('div');d.style.cssText="display:flex;gap:8px;margin-bottom:10px;";d.innerHTML=`<select class="ng" style="padding:8px;border-radius:6px;border:1px solid #d1d5db;"><option>食物組</option><option>飲料組</option><option>遊戲組</option><option>動漫組</option></select><input class="nn" placeholder="名稱" style="flex:1;padding:8px;border-radius:6px;border:1px solid #d1d5db;"><input class="np" placeholder="$" style="width:60px;padding:8px;border-radius:6px;border:1px solid #d1d5db;"><button onclick="this.parentElement.remove()" style="color:var(--danger);border:none;background:none;font-size:1.2rem;">×</button>`;document.getElementById('menu-editor-list').appendChild(d)};
@@ -456,4 +531,3 @@
     </script>
 </body>
 </html>
-
