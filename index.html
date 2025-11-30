@@ -117,10 +117,11 @@
         /* Pickup Cards */
         .pickup-card { background: white; color: black; border-left: none; border-top: 8px solid #4b5563; text-align: center; position: relative; overflow: hidden; }
         .pickup-card.ready { border-top-color: var(--warning); background: #fffbeb; animation: pop 0.5s; }
-        .pickup-card.preparing { border-top-color: #9ca3af; background: #e5e7eb; opacity: 0.8; }
+        .pickup-card.preparing { border-top-color: #9ca3af; background: #374151; color: #d1d5db; opacity: 0.8; }
+        
         .pickup-status-badge { font-weight: bold; font-size: 1.2rem; padding: 5px; margin-bottom: 5px; display: block; border-radius: 4px; }
         .status-ready { background: var(--warning); color: black; }
-        .status-prep { background: #9ca3af; color: white; }
+        .status-prep { background: #4b5563; color: white; }
         
         .pickup-big-num { font-size: 3.5rem; font-weight: 900; margin: 5px 0; }
         
@@ -150,7 +151,7 @@
     <audio id="sfx-bell" src="https://assets.mixkit.co/active_storage/sfx/571/571-preview.mp3"></audio>
 
     <div id="role-selection-screen">
-        <div class="app-title">🎪 園遊會 POS</div>
+        <div class="app-title">🎪 園遊會 POS Pro</div>
         <div class="role-grid">
             <div class="role-card role-full" onclick="selectRole('cashier')">
                 <div class="role-icon">💰</div><div class="role-name">收銀台</div>
@@ -165,7 +166,7 @@
                 <div class="role-icon">🍱</div><div class="role-name">取餐口</div>
             </div>
         </div>
-        <div style="margin-top:20px; color:rgba(255,255,255,0.5); font-size:0.9rem;">V6.2</div>
+        <div style="margin-top:20px; color:rgba(255,255,255,0.5); font-size:0.9rem;">V6.3</div>
     </div>
 
     <div id="cashier-app">
@@ -286,7 +287,7 @@
 
         let products=[], sales=[], expenses=[], cart=[], currentRole='', currentFilter='All', kitchenMode='pending';
         let currentEditIndex = -1; 
-        let previousSalesCount = 0; // For audio trigger
+        let previousSalesCount = 0; 
 
         onValue(ref(db, ".info/connected"), s => { document.getElementById('connection-banner').style.background = s.val()?'var(--success)':'var(--danger)'; if(!s.val()) showToast("⚠️ 斷線"); });
         
@@ -299,11 +300,7 @@
         onValue(ref(db, 'sales'), s => { 
             const data = s.val();
             const newSales = data ? Object.entries(data).map(([k,v])=>({...v,dbKey:k})) : [];
-            
-            // Audio Trigger: Only if NOT cashier and more orders appeared
-            if(currentRole && currentRole !== 'cashier' && newSales.length > previousSalesCount) {
-                playAudio('sfx-bell');
-            }
+            if(currentRole && currentRole !== 'cashier' && newSales.length > previousSalesCount) { playAudio('sfx-bell'); }
             previousSalesCount = newSales.length;
             sales = newSales;
             refreshUI(); 
@@ -319,19 +316,8 @@
         }
 
         // --- Core Interactions ---
-        window.playAudio = (id) => {
-            const audio = document.getElementById(id);
-            if(audio) { audio.currentTime = 0; audio.play().catch(e => console.log("Audio needed user interaction")); }
-        }
-
-        window.requestWakeLock = async () => {
-            try {
-                if ('wakeLock' in navigator) {
-                    await navigator.wakeLock.request('screen');
-                    console.log('Wake Lock Active');
-                }
-            } catch (err) { console.log(err); }
-        }
+        window.playAudio = (id) => { const audio = document.getElementById(id); if(audio) { audio.currentTime = 0; audio.play().catch(e => console.log("Audio needed user interaction")); } }
+        window.requestWakeLock = async () => { try { if ('wakeLock' in navigator) { await navigator.wakeLock.request('screen'); console.log('Wake Lock Active'); } } catch (err) { console.log(err); } }
 
         window.setupCardEvents = (div, p) => {
             let t, sx, sy, ip=false;
@@ -452,38 +438,33 @@
         };
         window.updStatus=(k,sk,v)=>{update(ref(db,`sales/${k}`),{[sk]:v})};
 
-        // Pickup (V6.2 Status Display Update)
+        // Pickup (V6.3 Logic: Strict All-Ready)
         window.renderPickup = () => {
             const c=document.getElementById('pickup-orders'); c.innerHTML='';
             sales.forEach(o=>{
-                const rel=(o.items||[]).filter(i=>i.group==='食物組'||i.group==='飲料組'); if(rel.length===0)return;
-                const fR=o.foodStatus==='ready'||o.foodStatus==='none', dR=o.drinkStatus==='ready'||o.drinkStatus==='none';
-                const fP=o.foodStatus==='picked'||o.foodStatus==='none', dP=o.drinkStatus==='picked'||o.drinkStatus==='none';
+                const relevantItems = (o.items || []).filter(i => i.group === '食物組' || i.group === '飲料組');
+                if (relevantItems.length === 0) return; 
+
+                const hasFood = (o.items || []).some(i => i.group === '食物組');
+                const hasDrink = (o.items || []).some(i => i.group === '飲料組');
+
+                const fReady = !hasFood || o.foodStatus === 'ready' || o.foodStatus === 'picked';
+                const dReady = !hasDrink || o.drinkStatus === 'ready' || o.drinkStatus === 'picked';
                 
-                // Show if NOT picked yet
-                if(!(fP && dP)) {
-                    // Determine Status: If any pending -> Preparing. If any ready -> Ready. (Ready takes priority for separate cards or combined?)
-                    // Logic: If any part is Ready, show as Ready (to call customer). If only Pending, show as Preparing.
-                    
-                    let statusClass = 'preparing';
-                    let statusText = '🔥 製作中';
-                    
-                    // If anything is ready, upgrade status
-                    if ((o.foodStatus==='ready') || (o.drinkStatus==='ready')) {
-                        statusClass = 'ready';
-                        statusText = '✅ 待取餐';
-                    }
+                const isAllReady = fReady && dReady;
+                const isFullyPicked = (o.foodStatus === 'picked' || o.foodStatus === 'none') && (o.drinkStatus === 'picked' || o.drinkStatus === 'none');
 
-                    const txt=rel.map(i=>`${i.name} x${i.qty}`).join(', ');
-                    const d=document.createElement('div'); d.className=`ticket pickup-card ${statusClass}`;
-                    
-                    // Button only if ready
-                    const btn = statusClass==='ready' ? `<button class="btn-ticket" style="background:#1f2937;color:white;" onclick="pkDone('${o.dbKey}')">已取餐</button>` : '';
+                if (!isFullyPicked) {
+                    const txt = relevantItems.map(i => `${i.name} x${i.qty}`).join(', ');
+                    const statusClass = isAllReady ? 'ready' : 'preparing';
+                    const statusText = isAllReady ? '✅ 待取餐' : '🔥 製作中';
+                    const btn = isAllReady ? `<button class="btn-ticket" style="background:#1f2937;color:white;" onclick="pkDone('${o.dbKey}')">已取餐</button>` : '';
 
-                    d.innerHTML=`
-                        <div class="pickup-status-badge ${statusClass === 'ready' ? 'status-ready' : 'status-prep'}">${statusText}</div>
+                    const d = document.createElement('div'); d.className = `ticket pickup-card ${statusClass}`;
+                    d.innerHTML = `
+                        <div class="pickup-status-badge ${isAllReady ? 'status-ready' : 'status-prep'}">${statusText}</div>
                         <div class="pickup-big-num">#${o.displayId}</div>
-                        <div style="color:#4b5563;margin-bottom:15px;">${txt}</div>
+                        <div style="color:${isAllReady?'black':'#d1d5db'};margin-bottom:15px;">${txt}</div>
                         ${btn}
                     `;
                     c.appendChild(d);
@@ -509,10 +490,7 @@
         window.selectRole=r=>{
             if(r==='cashier'&&prompt("密碼")!=='1329')return alert("錯誤");
             currentRole=r; document.getElementById('role-selection-screen').style.display='none';
-            
-            // Wake Lock for displays
-            if(r!=='cashier') requestWakeLock();
-
+            if(r!=='cashier') requestWakeLock(); // Wake Lock
             if(r==='cashier'){document.getElementById('cashier-app').style.display='block';renderMenu()}
             else if(r==='pickup'){document.getElementById('pickup-app').style.display='flex';renderPickup()}
             else{document.getElementById('kitchen-app').style.display='flex';document.getElementById('kitchen-icon').innerText=r==='food'?'🍔':'🥤';document.getElementById('kitchen-title').innerText=r==='food'?'食物廚房':'飲料吧台';setKitchenMode('pending')}
@@ -525,5 +503,3 @@
     </script>
 </body>
 </html>
-
-
