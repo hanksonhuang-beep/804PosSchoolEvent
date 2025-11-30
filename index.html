@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>園遊會 POS Pro (V6.0 旗艦版)</title>
+    <title>園遊會 POS Pro (V6.1 菜單恢復版)</title>
     <style>
         :root {
             --primary: #6366f1; --primary-dark: #4f46e5;
@@ -58,6 +58,7 @@
         .sold-stamp { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-15deg); border: 3px solid var(--danger); color: var(--danger); font-weight: 900; font-size: 1.5rem; padding: 5px 10px; border-radius: 8px; pointer-events: none; }
         .p-name { font-weight: 700; font-size: 1rem; line-height: 1.3; }
         .p-price { font-weight: 800; font-size: 1.1rem; color: var(--primary); align-self: flex-end; }
+        .p-tag { font-size: 0.7rem; color: var(--text-sub); margin-bottom: auto; }
 
         /* Cart */
         .cart-section { width: 380px; background: var(--surface); display: flex; flex-direction: column; border-left: 1px solid var(--border); z-index: 50; }
@@ -171,7 +172,7 @@
             </div>
 
             <div class="cart-section" id="cart-panel">
-                <div class="cart-header" onclick="toggleCart()">
+                <div class="cart-header" onclick="toggleMobileCart()">
                     <div style="font-weight:700; font-size:1.1rem;">🛒 購物車 <span id="cart-count" style="background:var(--primary); color:white; padding:2px 8px; border-radius:10px; font-size:0.8rem;">0</span></div>
                     <span onclick="clearCart(); event.stopPropagation();" style="color:var(--danger); cursor:pointer;">清空</span>
                 </div>
@@ -241,7 +242,12 @@
         </div>
     </div>
 
-    <div id="menu-editor-modal" class="modal"><div class="modal-card"><span class="modal-close" onclick="document.getElementById('menu-editor-modal').style.display='none'">&times;</span><div class="modal-title">⚙️ 編輯菜單</div><button onclick="addEditorRow()" style="width:100%;padding:10px;background:var(--success);color:white;border:none;border-radius:8px;margin-bottom:10px;">+ 新增</button><div id="menu-editor-list"></div><button onclick="saveMenu()" style="width:100%;padding:12px;background:var(--primary);color:white;border:none;border-radius:10px;margin-top:15px;">儲存</button></div></div>
+    <div id="menu-editor-modal" class="modal"><div class="modal-card"><span class="modal-close" onclick="document.getElementById('menu-editor-modal').style.display='none'">&times;</span><div class="modal-title">⚙️ 編輯菜單</div>
+    <div style="display:flex; gap:10px; margin-bottom:15px;">
+        <button onclick="addEditorRow()" style="flex:1;padding:10px;background:var(--success);color:white;border:none;border-radius:8px;font-weight:bold;">+ 新增商品</button>
+        <button onclick="restoreDefaults()" style="flex:1;padding:10px;background:#6b7280;color:white;border:none;border-radius:8px;font-weight:bold;">🔄 恢復預設</button>
+    </div>
+    <div id="menu-editor-list"></div><button onclick="saveMenu()" style="width:100%;padding:12px;background:var(--primary);color:white;border:none;border-radius:10px;margin-top:15px;font-weight:bold;">儲存變更</button></div></div>
     
     <div id="profit-modal" class="modal"><div class="modal-card"><span class="modal-close" onclick="document.getElementById('profit-modal').style.display='none'">&times;</span><div class="modal-title">💰 損益 & 記帳</div><div style="background:#f3f4f6;padding:15px;border-radius:12px;margin-bottom:20px;"><div style="font-weight:700;margin-bottom:10px;">📝 新增支出</div><div style="display:flex;gap:8px;margin-bottom:8px;"><select id="ex-group" style="padding:8px;"><option value="食物組">食物組</option><option value="飲料組">飲料組</option><option value="遊戲組">遊戲組</option><option value="動漫組">動漫組</option></select><input id="ex-buyer" placeholder="代墊人" style="width:70px;padding:8px;"><input id="ex-item" placeholder="項目" style="flex:1;padding:8px;"></div><div style="display:flex;gap:8px;"><input id="ex-cost" type="number" placeholder="金額" style="flex:1;padding:8px;"><button onclick="addExpense()" style="background:black;color:white;border:none;padding:8px 20px;border-radius:6px;">記帳</button></div></div><table class="data-table"><thead><tr><th>組別</th><th>營收</th><th>成本</th><th>淨利</th></tr></thead><tbody id="profit-table-body"></tbody></table></div></div>
     
@@ -264,11 +270,31 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
+        // Default Products Data
+        const defaultProducts = [
+            { id: 101, group: "食物組", name: "麻辣鴨血", price: 60, soldOut: false },
+            { id: 102, group: "食物組", name: "鴨血泡麵", price: 80, soldOut: false },
+            { id: 201, group: "飲料組", name: "珍奶", price: 35, soldOut: false },
+            { id: 301, group: "遊戲組", name: "各種遊戲", price: 30, soldOut: false },
+            { id: 401, group: "動漫組", name: "動漫/周邊", price: 0, soldOut: false }
+        ];
+
         let products=[], sales=[], expenses=[], cart=[], currentRole='', currentFilter='All', kitchenMode='pending';
-        let currentEditIndex = -1; // For Note editing
+        let currentEditIndex = -1; 
 
         onValue(ref(db, ".info/connected"), s => { document.getElementById('connection-banner').style.background = s.val()?'var(--success)':'var(--danger)'; if(!s.val()) showToast("⚠️ 斷線"); });
-        onValue(ref(db, 'menu'), s => { products = s.val()?Object.values(s.val()):[]; if(currentRole==='cashier') renderMenu(); });
+        
+        // Auto-populate if empty
+        onValue(ref(db, 'menu'), s => { 
+            const val = s.val();
+            if (!val) {
+                set(ref(db, 'menu'), defaultProducts);
+            } else {
+                products = Object.values(val); 
+                if(currentRole==='cashier') renderMenu(); 
+            }
+        });
+
         onValue(ref(db, 'sales'), s => { sales = s.val()?Object.entries(s.val()).map(([k,v])=>({...v,dbKey:k})):[]; refreshUI(); });
         onValue(ref(db, 'expenses'), s => { expenses = s.val()?Object.values(s.val()):[]; if(document.getElementById('profit-modal').style.display==='flex') renderProfitTable(); });
 
@@ -329,7 +355,6 @@
             calculateChange(); c.scrollTop=c.scrollHeight;
         };
 
-        // V6 Features: Change Price & Quick Note
         window.changePrice = i => {
             const newP = prompt("💰 修改價格 (輸入 0 代表招待):", cart[i].price);
             if(newP !== null && !isNaN(parseInt(newP))) { cart[i].price = parseInt(newP); renderCart(); }
@@ -341,7 +366,7 @@
 
         window.adjQty=(i,d)=>{cart[i].qty+=d;if(cart[i].qty<=0)cart.splice(i,1);renderCart()};
         window.calculateChange=()=>{const t=parseInt(document.getElementById('total-amount').innerText.replace('$',''))||0, p=parseInt(document.getElementById('pay-amount').value); const el=document.getElementById('change-display'); if(p>0){const d=p-t; el.innerText=d>=0?`找 $${d}`:`少 $${Math.abs(d)}`; el.style.color=d>=0?'#6b7280':'#ef4444';}else{el.innerText='找 $0';el.style.color='#6b7280'}};
-        window.toggleCart=()=>{document.getElementById('cart-panel').classList.toggle('expanded')};
+        window.toggleMobileCart=()=>{document.getElementById('cart-panel').classList.toggle('expanded')};
         window.clearCart=()=>{cart=[];document.getElementById('pay-amount').value='';renderCart()};
         window.checkout=()=>{
             if(cart.length===0)return;
@@ -357,7 +382,7 @@
             }).finally(()=>{btn.disabled=false;btn.innerText="結 帳"});
         };
 
-        // Kitchen V6: Summary View
+        // Kitchen
         window.setKitchenMode = m => {
             kitchenMode=m;
             document.querySelectorAll('.sw-btn').forEach(b=>b.classList.remove('active'));
@@ -368,30 +393,19 @@
         };
         window.renderKitchen = () => {
             const type = currentRole==='food'?'食物組':'飲料組';
-            
-            // Summary View
             if(kitchenMode==='summary') {
                 const counts = {};
                 sales.forEach(o => {
                     const statusKey = currentRole==='food'?'foodStatus':'drinkStatus';
                     if(o[statusKey] === 'pending') {
-                        (o.items||[]).forEach(i => {
-                            if(i.group === type) {
-                                if(!counts[i.name]) counts[i.name] = 0;
-                                counts[i.name] += i.qty;
-                            }
-                        });
+                        (o.items||[]).forEach(i => { if(i.group === type) { if(!counts[i.name]) counts[i.name] = 0; counts[i.name] += i.qty; }});
                     }
                 });
                 const tbody = document.getElementById('summary-body'); tbody.innerHTML='';
                 if(Object.keys(counts).length===0) tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;color:#6b7280;padding:20px;">無待辦事項</td></tr>';
-                for(let [name, qty] of Object.entries(counts)) {
-                    tbody.innerHTML += `<tr><td>${name}</td><td class="sum-qty">${qty}</td></tr>`;
-                }
+                for(let [name, qty] of Object.entries(counts)) { tbody.innerHTML += `<tr><td>${name}</td><td class="sum-qty">${qty}</td></tr>`; }
                 return;
             }
-
-            // Ticket View
             const c=document.getElementById('kitchen-orders'); c.innerHTML='';
             const statusKey = currentRole==='food'?'foodStatus':'drinkStatus';
             [...sales].reverse().forEach(o => {
@@ -440,8 +454,10 @@
         window.renderHistory=()=>{document.getElementById('history-container').innerHTML=sales.slice().reverse().map(o=>`<div style="background:white;padding:15px;margin-bottom:10px;border-radius:12px;border:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;"><div><div style="font-weight:bold;font-size:1.1rem;">#${o.displayId} <span style="font-size:0.8rem;font-weight:normal;color:#6b7280;margin-left:5px;">${o.time}</span></div><div style="color:#4b5563;font-size:0.9rem;margin-top:5px;">${(o.items||[]).map(i=>i.name).join(', ')}</div></div><div style="text-align:right;"><div style="font-weight:800;color:var(--primary);font-size:1.2rem;">$${o.total}</div><button onclick="delOrder('${o.dbKey}')" style="margin-top:5px;color:var(--danger);background:none;border:none;font-size:0.85rem;cursor:pointer;">刪除</button></div></div>`).join('')};
         window.delOrder=k=>{if(confirm("刪除?"))remove(ref(db,`sales/${k}`))};
         window.selectRole=r=>{if(r==='cashier'&&prompt("密碼")!=='1329')return alert("錯誤");currentRole=r;document.getElementById('role-selection-screen').style.display='none';if(r==='cashier'){document.getElementById('cashier-app').style.display='block';renderMenu()}else if(r==='pickup'){document.getElementById('pickup-app').style.display='flex';renderPickup()}else{document.getElementById('kitchen-app').style.display='flex';document.getElementById('kitchen-icon').innerText=r==='food'?'🍔':'🥤';document.getElementById('kitchen-title').innerText=r==='food'?'食物廚房':'飲料吧台';setKitchenMode('pending')}};
+
         window.openMenuEditor=()=>{document.getElementById('menu-editor-modal').style.display='flex';document.getElementById('menu-editor-list').innerHTML=products.map((p,i)=>`<div style="display:flex;gap:8px;margin-bottom:10px;"><select id="me-g-${i}" style="padding:8px;border-radius:6px;border:1px solid #d1d5db;"><option ${p.group==='食物組'?'selected':''}>食物組</option><option ${p.group==='飲料組'?'selected':''}>飲料組</option><option ${p.group==='遊戲組'?'selected':''}>遊戲組</option><option ${p.group==='動漫組'?'selected':''}>動漫組</option></select><input id="me-n-${i}" value="${p.name}" style="flex:1;padding:8px;border-radius:6px;border:1px solid #d1d5db;"><input id="me-p-${i}" type="number" value="${p.price}" style="width:60px;padding:8px;border-radius:6px;border:1px solid #d1d5db;"><button onclick="this.parentElement.remove()" style="color:var(--danger);border:none;background:none;font-size:1.2rem;">×</button></div>`).join('')};
         window.addEditorRow=()=>{const d=document.createElement('div');d.style.cssText="display:flex;gap:8px;margin-bottom:10px;";d.innerHTML=`<select class="ng" style="padding:8px;border-radius:6px;border:1px solid #d1d5db;"><option>食物組</option><option>飲料組</option><option>遊戲組</option><option>動漫組</option></select><input class="nn" placeholder="名稱" style="flex:1;padding:8px;border-radius:6px;border:1px solid #d1d5db;"><input class="np" placeholder="$" style="width:60px;padding:8px;border-radius:6px;border:1px solid #d1d5db;"><button onclick="this.parentElement.remove()" style="color:var(--danger);border:none;background:none;font-size:1.2rem;">×</button>`;document.getElementById('menu-editor-list').appendChild(d)};
+        window.restoreDefaults = () => { if(confirm("確定要恢復預設菜單嗎？\n這將覆蓋目前的菜單設定！")) { set(ref(db, 'menu'), defaultProducts); document.getElementById('menu-editor-modal').style.display='none'; showToast("已恢復預設菜單"); }};
         window.saveMenu=()=>{const np=[];products.forEach((p,i)=>{const n=document.getElementById(`me-n-${i}`);if(n)np.push({id:p.id,group:document.getElementById(`me-g-${i}`).value,name:n.value,price:parseInt(document.getElementById(`me-p-${i}`).value)||0,soldOut:p.soldOut})});document.querySelectorAll('#menu-editor-list > div').forEach(d=>{const n=d.querySelector('.nn');if(n&&n.value)np.push({id:Date.now()+Math.random(),group:d.querySelector('.ng').value,name:n.value,price:parseInt(d.querySelector('.np').value)||0,soldOut:false})});set(ref(db,'menu'),np);document.getElementById('menu-editor-modal').style.display='none'};
     </script>
 </body>
