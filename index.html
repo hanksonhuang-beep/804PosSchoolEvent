@@ -151,7 +151,7 @@
     <audio id="sfx-bell" src="https://assets.mixkit.co/active_storage/sfx/571/571-preview.mp3"></audio>
 
     <div id="role-selection-screen">
-        <div class="app-title">🎪 園遊會 POS Pro</div>
+        <div class="app-title">🎪 園遊會 POS</div>
         <div class="role-grid">
             <div class="role-card role-full" onclick="selectRole('cashier')">
                 <div class="role-icon">💰</div><div class="role-name">收銀台</div>
@@ -278,10 +278,10 @@
         const db = getDatabase(app);
 
         const defaultProducts = [
-            { id: 101, group: "食物組", name: "麻辣鴨血", price: 60, soldOut: false },
+            { id: 101, group: "食物組", name: "麻辣鴨血", price: 70, soldOut: false },
             { id: 102, group: "食物組", name: "鴨血泡麵", price: 80, soldOut: false },
             { id: 201, group: "飲料組", name: "珍奶", price: 35, soldOut: false },
-            { id: 301, group: "遊戲組", name: "各種遊戲", price: 30, soldOut: false },
+            { id: 301, group: "遊戲組", name: "各種遊戲", price: 20, soldOut: false },
             { id: 401, group: "動漫組", name: "動漫/周邊", price: 0, soldOut: false }
         ];
 
@@ -503,3 +503,4 @@
     </script>
 </body>
 </html>
+
