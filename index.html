@@ -239,10 +239,8 @@
             <span class="modal-close" onclick="closeNoteModal()">&times;</span>
             <div style="font-size:1.2rem; font-weight:bold; margin-bottom:15px;">📝 快速備註</div>
             <div class="tag-grid">
-                <button class="tag-btn" onclick="addTag('少冰')">少冰</button>
+                <button class="tag-btn" onclick="addTag('正常冰')">正常冰</button>
                 <button class="tag-btn" onclick="addTag('去冰')">去冰</button>
-                <button class="tag-btn" onclick="addTag('微糖')">微糖</button>
-                <button class="tag-btn" onclick="addTag('半糖')">半糖</button>
             </div>
             <input id="custom-note" placeholder="或輸入自訂備註..." style="width:100%; padding:10px; border:1px solid #ccc; border-radius:8px; margin-bottom:15px;">
             <button onclick="saveNote()" style="width:100%; padding:12px; background:var(--primary); color:white; border:none; border-radius:8px; font-weight:bold;">確定</button>
@@ -278,8 +276,8 @@
         const db = getDatabase(app);
 
         const defaultProducts = [
-            { id: 101, group: "食物組", name: "麻辣鴨血", price: 70, soldOut: false },
-            { id: 102, group: "食物組", name: "鴨血泡麵", price: 80, soldOut: false },
+            { id: 101, group: "食物組", name: "麻辣鴨血", price: 60, soldOut: false },
+            { id: 102, group: "食物組", name: "鴨血泡麵", price:70, soldOut: false },
             { id: 201, group: "飲料組", name: "珍奶", price: 35, soldOut: false },
             { id: 301, group: "遊戲組", name: "各種遊戲", price: 20, soldOut: false },
             { id: 401, group: "動漫組", name: "動漫/周邊", price: 0, soldOut: false }
@@ -503,4 +501,5 @@
     </script>
 </body>
 </html>
+
 
